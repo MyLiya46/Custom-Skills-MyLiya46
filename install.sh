@@ -5,12 +5,14 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  ./install.sh --agent <claude-code|codex> [--global] --skill <name[,name...]|all>
+  ./install.sh --agent <claude-code|codex> [--global] [--update] --skill <name[,name...]|all>
 
 Options:
   --agent NAME       Installation target agent: claude-code or codex.
   --global           Install to the user's global skills directory.
                      Without this option, install to the current project.
+  --update           Replace each selected target skill directory completely.
+                     This removes stale files and local edits in that skill.
   --skill NAMES      Skills to install. May be repeated, comma-separated, or all.
   -h, --help         Show this help.
 
@@ -29,6 +31,7 @@ die() {
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 agent=""
 global_install=false
+update_install=false
 requested_skills=()
 
 while (($# > 0)); do
@@ -44,6 +47,10 @@ while (($# > 0)); do
       ;;
     --global)
       global_install=true
+      shift
+      ;;
+    --update)
+      update_install=true
       shift
       ;;
     --skill)
@@ -118,11 +125,32 @@ for skill in "${selected_skills[@]}"; do
 done
 
 mkdir -p "$skills_dir"
+skills_real="$(CDPATH= cd -- "$skills_dir" && pwd -P)"
 for skill in "${selected_skills[@]}"; do
   target_dir="$skills_dir/$skill"
-  mkdir -p "$target_dir"
+  if "$update_install"; then
+    target_dir="$skills_real/$skill"
+    if [[ -e "$target_dir" || -L "$target_dir" ]]; then
+      if [[ ! -d "$target_dir" || -L "$target_dir" ]]; then
+        die "refusing --update for non-directory target: $target_dir"
+      fi
+     case "$target_dir" in
+       "$skills_real"/*) ;;
+       *) die "refusing --update outside skills directory: $target_dir" ;;
+     esac
+     if [[ "$target_dir" == "$skills_real" ]]; then
+       die "refusing to remove skills directory itself"
+     fi
+      rm -rf -- "$target_dir"
+   fi
+ fi
+ mkdir -p "$target_dir"
   cp -R "$script_dir/$skill/." "$target_dir/"
-  echo "Installed $skill -> $target_dir"
+  if "$update_install"; then
+    echo "Updated $skill -> $target_dir"
+  else
+    echo "Installed $skill -> $target_dir"
+  fi
 done
 
 echo "Done: ${#selected_skills[@]} skill(s) installed for $agent."

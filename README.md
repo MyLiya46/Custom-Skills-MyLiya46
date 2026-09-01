@@ -35,6 +35,9 @@ bash install.sh --agent claude-code --skill all
 
 # 全局安装指定 skill 到 ~/.codex/skills/
 bash install.sh --agent codex --global --skill plan-generator,plan-executor
+
+# 强制替换更新指定 skill（会删除目标 skill 中的旧文件和本地修改）
+bash install.sh --agent codex --global --update --skill plan-generator,plan-executor
 ```
 
 也可以手动复制单个 skill。每个 skill 目录可同时安装到 Claude Code / Codex 的 skills 目录（两者都用 `SKILL.md` 驱动，同一份目录即可；脚本用到的 `<skill_root>` 会自动解析为各自安装路径）。以 `repo-committer` 为例：
