@@ -7,7 +7,7 @@ description: 读取 plan-generator 产出的 docs/todo.md 与 docs/plans/，按�
 
 ## 何时使用
 
-当用户已用 **plan-generator**（或其等价物）产出了 `docs/todo.md` + `docs/plans/` 下的计划文件，并对 Claude 说「**执行**」「**实施**」「**跑任务**」「全部跑完」，或直接指定其中某几个任务 ID 时触发本 skill。
+当用户已用 **plan-generator**（或其等价物）产出了 `docs/todo.md` + `docs/plans/` 下的计划文件，并对 Claude Code/Codex 说「**执行**」「**实施**」「**跑任务**」「全部跑完」，或直接指定其中某几个任务 ID 时触发本 skill。
 
 本 skill 只做**实施**。它把「从计划到代码落地」这一过程固化：读计划 → 按拓扑并行派发 → 跑到验收命令全绿 → 回写状态 → 汇总报告。
 

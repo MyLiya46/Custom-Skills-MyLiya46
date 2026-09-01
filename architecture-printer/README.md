@@ -2,7 +2,7 @@
 
 **版本**：v1.0.0（beta）
 
-`architecture-printer` 是一个面向 Codex、Claude Code 及其他支持 `SKILL.md` 的代码代理的通用项目架构文档 Skill。
+`architecture-printer` 是一个面向 Claude Code/Codex 及其他支持 `SKILL.md` 的代码代理的通用项目架构文档 Skill。
 
 它帮助刚接触新项目的开发者快速回答：
 
@@ -19,6 +19,24 @@
 - 生成单文件、可离线打开的交互式 HTML 架构图。
 - 通过节点详情查看签名、docstring、源码 `file:line` 链接和证据状态。
 - 保留无法确认的关系为 `[UNKNOWN: ...]`，避免凭经验编造调用链。
+
+## 安装
+
+把本目录复制到 Claude Code/Codex 客户端的 skills 目录即可（两者共用同一份 `SKILL.md`，脚本的 `<skill_root>` 会自行解析）：
+
+**Claude Code**
+
+```bash
+cp -r architecture-printer ~/.claude/skills/architecture-printer
+```
+
+**Codex**
+
+```bash
+cp -r architecture-printer ~/.codex/skills/architecture-printer
+```
+
+安装后在任意终端从 skill 安装目录执行 `scripts/scan_project.py` / `scripts/render_workflow.py`；或在 Claude Code/Codex 内对目标项目描述诉求，由其调用脚本完成扫描渲染。
 
 ## 使用方式
 

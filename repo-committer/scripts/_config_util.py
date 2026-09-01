@@ -20,7 +20,7 @@ EXAMPLE_PATH = SKILL_ROOT / "config.example.json"
 def ensure_utf8_stdio() -> None:
     """强制 stdout/stderr 以 UTF-8 输出，避免 Windows(GBK) 下中文被宿主按 UTF-8 读取时乱码。
 
-    宿主（Claude Code 等）按 UTF-8 读取子进程输出；而 Windows 控制台/管道默认编码可能是
+    宿主（Claude Code/Codex 等）按 UTF-8 读取子进程输出；而 Windows 控制台/管道默认编码可能是
     GBK(cp936)，导致脚本中文被写成 GBK 字节、读方按 UTF-8 解析 → 乱码。`reconfigure`
     仅 Python 3.7+ 可用且只对文本流生效，故逐流 try/except 静默降级。
     """

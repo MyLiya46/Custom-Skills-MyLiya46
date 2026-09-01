@@ -1,11 +1,11 @@
 ---
 name: architecture-printer
-description: Scan an unfamiliar project and produce an evidence-backed interactive HTML architecture workflow plus a Markdown onboarding guide. Use from Codex, Claude Code, or another file-aware coding agent when a developer needs to understand a new codebase, map public routes and entry points, trace imports and service orchestration, document external dependencies/configuration/database layers, or refresh architecture docs. Supports framework-routed templates for FastAPI, Flask, Django, Express, NestJS, Next.js, and generic projects; never invents unresolved imports or exposes secrets.
+description: Scan an unfamiliar project and produce an evidence-backed interactive HTML architecture workflow plus a Markdown onboarding guide. Use from Claude Code/Codex, or another file-aware coding agent when a developer needs to understand a new codebase, map public routes and entry points, trace imports and service orchestration, document external dependencies/configuration/database layers, or refresh architecture docs. Supports framework-routed templates for FastAPI, Flask, Django, Express, NestJS, Next.js, and generic projects; never invents unresolved imports or exposes secrets.
 ---
 
 # Architecture Printer
 
-把陌生代码库转换成“新开发者一天内可上手”的架构速查资料。先扫描事实，再分析链路，最后生成图和说明；任何无法由扫描结果或源码确认的关系都必须标记为 `[UNKNOWN: name]`，不得猜测。Skill 本身只依赖 `SKILL.md`、Python 标准库和 shell 命令，不依赖某个 AI 厂商的工具调用协议；Codex、Claude Code 等宿主只需把下列命令作为普通终端命令执行。
+把陌生代码库转换成“新开发者一天内可上手”的架构速查资料。先扫描事实，再分析链路，最后生成图和说明；任何无法由扫描结果或源码确认的关系都必须标记为 `[UNKNOWN: name]`，不得猜测。Skill 本身只依赖 `SKILL.md`、Python 标准库和 shell 命令，不依赖某个 AI 厂商的工具调用协议；Claude Code/Codex 等宿主只需把下列命令作为普通终端命令执行。
 
 ## 输入与输出
 

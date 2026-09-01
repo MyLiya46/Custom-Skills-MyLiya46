@@ -40,10 +40,15 @@
 
 ```bash
 # 在本目录下执行；全局安装（所有项目可用）
+# Claude Code
 cp -r . ~/.claude/skills/prompt-polisher/
+# Codex
+cp -r . ~/.codex/skills/prompt-polisher/
 
-# 或项目级安装
+# 或项目级安装（Claude Code）
 cp -r . <目标项目>/.claude/skills/prompt-polisher/
+# 项目级安装（Codex）
+cp -r . <目标项目>/.codex/skills/prompt-polisher/
 ```
 
 新开会话后（技能需重启后加载）：

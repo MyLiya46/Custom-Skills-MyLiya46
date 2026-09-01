@@ -1,6 +1,6 @@
 # Custom Skills — MyLiya46
 
-一套可独立安装的 Claude Code Skill 集合（monorepo）。每个顶层目录都是一个自包含、可直接安装到 `~/.claude/skills/` 或 `<project>/.claude/skills/` 的 skill。
+一套可独立安装的 Claude Code/Codex Skill 集合（monorepo）。每个顶层目录都是一个自包含、可直接安装到 `~/.claude/skills/` 或 `<project>/.claude/skills/` 的 skill。
 
 ## Skill List
 
@@ -27,10 +27,29 @@
 ```
 ## 安装
 
-将某个 skill 目录复制到 Claude 客户端的 skills 目录即可，例如：
+推荐使用仓库自带的安装脚本。默认安装到当前项目，增加 `--global` 则安装到用户级目录；`--skill` 可以重复传入，也可以使用逗号分隔多个 skill，或者使用 `all` 安装全部 skill：
+
+```bash
+# 安装全部 skill 到当前项目的 .claude/skills/
+bash install.sh --agent claude-code --skill all
+
+# 全局安装指定 skill 到 ~/.codex/skills/
+bash install.sh --agent codex --global --skill plan-generator,plan-executor
+```
+
+也可以手动复制单个 skill。每个 skill 目录可同时安装到 Claude Code / Codex 的 skills 目录（两者都用 `SKILL.md` 驱动，同一份目录即可；脚本用到的 `<skill_root>` 会自动解析为各自安装路径）。以 `repo-committer` 为例：
+
+
+**Claude Code**
 
 ```bash
 cp -r repo-committer ~/.claude/skills/repo-committer
+```
+
+**Codex**
+
+```bash
+cp -r repo-committer ~/.codex/skills/repo-committer
 ```
 
 ## 收藏常用第三方 Skill 清单

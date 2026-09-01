@@ -18,24 +18,35 @@ plan-executor/
 
 ## 安装
 
-把 `plan-executor/` 目录复制到 Claude 客户端的 skills 目录：
+本目录同时支持 Claude Code / Codex（同一份 `SKILL.md`），复制到对应客户端的 skills 目录即可：
+
+**Claude Code**
 
 ```bash
 # Linux / macOS / Windows Git Bash
 mkdir -p ~/.claude/skills/plan-executor && cp -r plan-executor/. ~/.claude/skills/plan-executor/
 ```
 
+**Codex**
+
+```bash
+# Linux / macOS / Windows Git Bash
+mkdir -p ~/.codex/skills/plan-executor && cp -r plan-executor/. ~/.codex/skills/plan-executor/
+```
+
 ```powershell
 # Windows PowerShell
 New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\skills\plan-executor" | Out-Null
 Copy-Item -Recurse -Force "plan-executor\*" "$env:USERPROFILE\.claude\skills\plan-executor\"
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.codex\skills\plan-executor" | Out-Null
+Copy-Item -Recurse -Force "plan-executor\*" "$env:USERPROFILE\.codex\skills\plan-executor\"
 ```
 
 ## 使用
 
 前置：先在项目目录用 plan-generator 产出 `docs/todo.md` + `docs/plans/`（任务状态须为 `reviewed`）。
 
-对 Claude 说「用 plan-executor 执行 docs/todo.md」，或「实施 / 跑任务」，或指定「执行 T03、T04」。
+对 Claude Code/Codex 说「用 plan-executor 执行 docs/todo.md」，或「实施 / 跑任务」，或指定「执行 T03、T04」。
 
 executor 行为：默认**全自动**——按 `blockedBy` 并发派发、跑到验收命令全绿、回写状态、输出报告；只在失败/阻塞/冲突时停下等你决策。
 

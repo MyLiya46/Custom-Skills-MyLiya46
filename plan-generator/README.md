@@ -19,22 +19,33 @@ plan-generator/               # 本目录（可分发 / 安装的 skill）
 
 ## 安装
 
-把本目录复制到 Claude 客户端的 skills 目录：
+本目录同时支持 Claude Code / Codex（同一份 `SKILL.md`），复制到对应客户端的 skills 目录即可：
+
+**Claude Code**
 
 ```bash
 # Linux / macOS / Windows Git Bash
 mkdir -p ~/.claude/skills/plan-generator && cp -r . ~/.claude/skills/plan-generator/
 ```
 
+**Codex**
+
+```bash
+# Linux / macOS / Windows Git Bash
+mkdir -p ~/.codex/skills/plan-generator && cp -r . ~/.codex/skills/plan-generator/
+```
+
 ```powershell
 # Windows PowerShell
 New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\skills\plan-generator" | Out-Null
 Copy-Item -Recurse -Force * "$env:USERPROFILE\.claude\skills\plan-generator\"
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.codex\skills\plan-generator" | Out-Null
+Copy-Item -Recurse -Force * "$env:USERPROFILE\.codex\skills\plan-generator\"
 ```
 
 ## 使用
 
-对 Claude 说「用 plan-generator 拆解 docs/PRD.md」，或直接 @ 该方案文档并说明诉求——skill 会先拆解为 plans + todos，再逐条与你评审每份新增计划。
+对 Claude Code/Codex 说「用 plan-generator 拆解 docs/PRD.md」，或直接 @ 该方案文档并说明诉求——skill 会先拆解为 plans + todos，再逐条与你评审每份新增计划。
 
 支持三种模式：**首次**（目录无 plans/todo，从零建）、**续写**（已有 plans + todo，接着追加，ID 递增、保留既有任务）、**覆盖重拆**（新口径替换旧任务，先确认范围）。
 

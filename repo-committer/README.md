@@ -8,20 +8,32 @@
 
 ## 安装
 
-把本仓库的 `repo-committer/` 目录（即本目录）安装为你的 Claude Code skill：
+把本仓库的 `repo-committer/` 目录（即本目录）安装为你的 Claude Code/Codex skill。两者共用同一份 `SKILL.md`，脚本用到的 `<skill_root>` 会自行解析到对应客户端的安装路径：
+
+**Claude Code**
 
 ```bash
 # 在仓库根目录下执行
 cp -r repo-committer ~/.claude/skills/repo-committer
 ```
 
+**Codex**
+
+```bash
+# 在仓库根目录下执行
+cp -r repo-committer ~/.codex/skills/repo-committer
+```
+
 Windows（PowerShell）等价：
 
 ```powershell
+# Claude Code
 Copy-Item -Recurse -Force repo-committer "$env:USERPROFILE\.claude\skills\repo-committer"
+# Codex
+Copy-Item -Recurse -Force repo-committer "$env:USERPROFILE\.codex\skills\repo-committer"
 ```
 
-安装后，在任意 git 仓库内对 Claude Code 说「（用 repo-committer）帮我提交改动」即可触发。
+安装后，在任意 git 仓库内对 Claude Code/Codex 说「（用 repo-committer）帮我提交改动」即可触发。
 
 ## 术语：git config vs committer config
 

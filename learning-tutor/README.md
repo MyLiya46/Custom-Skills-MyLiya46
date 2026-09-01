@@ -21,17 +21,28 @@ learning-tutor/               # 本目录（可分发 / 安装的 skill）
 
 ## 安装
 
-把本目录复制到 Claude 客户端的 skills 目录：
+本目录同时支持 Claude Code / Codex（同一份 `SKILL.md`），复制到对应客户端的 skills 目录即可：
+
+**Claude Code**
 
 ```bash
 # Linux / macOS / Windows Git Bash
 mkdir -p ~/.claude/skills/learning-tutor && cp -r . ~/.claude/skills/learning-tutor/
 ```
 
+**Codex**
+
+```bash
+# Linux / macOS / Windows Git Bash
+mkdir -p ~/.codex/skills/learning-tutor && cp -r . ~/.codex/skills/learning-tutor/
+```
+
 ```powershell
 # Windows PowerShell
 New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\skills\learning-tutor" | Out-Null
 Copy-Item -Recurse -Force * "$env:USERPROFILE\.claude\skills\learning-tutor\"
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.codex\skills\learning-tutor" | Out-Null
+Copy-Item -Recurse -Force * "$env:USERPROFILE\.codex\skills\learning-tutor\"
 ```
 
 ## 使用
