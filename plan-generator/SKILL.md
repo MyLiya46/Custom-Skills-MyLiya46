@@ -1,9 +1,9 @@
 ---
-name: task-planner
+name: plan-generator
 description: 把 PRD / 方案报告 / 技术方案拆解为「一任务一计划文件（plans）+ 拓扑有序任务清单（todo）」，并逐条与用户一对一审阅每份新增计划，直到步骤精确到参数值、验收项可运行。When the user provides a PRD, design doc, or proposal and wants it decomposed into executable plans + an ordered todo list, then reviewed plan-by-plan to eliminate placeholders, conflicts, and vague steps.
 ---
 
-# task-planner · 方案拆解 + 逐条计划评审
+# plan-generator · 方案拆解 + 逐条计划评审
 
 ## 何时使用
 
@@ -27,7 +27,7 @@ description: 把 PRD / 方案报告 / 技术方案拆解为「一任务一计划
 
 | 状态值 | 语义 | 由谁设置 |
 |---|---|---|
-| `pending` | 待评审（任务拆解后的初始态） | 拆解阶段默认赋 |
+| `pending` | 待评审（任务拆解后的初始态） | 拆解阶段默认赋值 |
 | `reviewed` | 已评审，可开工 | 阶段二逐条评审通过后 |
 | `completed` | 已完成 | 用户交付验收后自置 |
 | `blocked` | 阻塞（前置依赖未完成、或存在未决假设暂缓） | 用户或异常兜底 |
@@ -42,7 +42,7 @@ description: 把 PRD / 方案报告 / 技术方案拆解为「一任务一计划
 | 续写（默认） | 已有 `docs/plans/` 与 `docs/todo.md` | 见下方「续写规则」 |
 | 覆盖重拆 | 新方案要替换既有任务口径 | 先向用户确认范围，再执行 |
 
-### 续写规则（第二次使用）
+### 续写规则
 
 - **保留不动**：既有计划文件、任务行、拓扑注释一律不删不改。
 - **ID 递增**：新任务接在现有最大号之后（如已有 T73，从 T74 起），禁止重号。
@@ -68,7 +68,7 @@ description: 把 PRD / 方案报告 / 技术方案拆解为「一任务一计划
 4. **写计划文件**：逐任务按 [references/plan-template.md](references/plan-template.md) 补齐字段，落笔即消灭占位。
 5. **写任务清单**：按 [references/todo-template.md](references/todo-template.md) 以拓扑顺序写入或续写，附拓扑注释与交付物核对；续写模式下只追加新任务行与拓扑说明，不重排既有条目。
 
-### 阶段二 · 逐条评审（一对一）
+### 阶段二 · 逐条评审
 
 6. **自检**：对每份新增计划先跑「禁止占位词」与「细致度正反例」（见下），自查不达标处自行补位；无法定的列成「待确认疑点」。
 7. **逐条评审**：按拓扑顺序，**一次只处理一份计划**：

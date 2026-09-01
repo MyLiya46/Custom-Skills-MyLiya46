@@ -36,8 +36,6 @@
 ## 验收标准
 - [ ] （每条含至少 1 条**可运行验证项**：`pytest …` / `npm run build` / `curl …`，不写口号式描述）
 
-## 状态
-- 状态：pending | reviewed | in_progress | completed | blocked
 ```
 
 ## 写作红线
@@ -46,4 +44,3 @@
 - 禁止出现「待定 / TBD / 等用户 XX / 占位 / 后续再定」等字眼。
 - 参数无法确定时：不写占位，改为「列疑点向用户确认」，并在该处显式标【假设】。
 - 验收标准每条要「可运行验证」，禁止「功能可用 / 体验优化」一类口号。
-- 「状态」字段用英文枚举（pending / reviewed / in_progress / completed / blocked），语义与流转见 SKILL.md「任务状态」，禁用中文状态值。

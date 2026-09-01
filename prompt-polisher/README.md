@@ -1,5 +1,7 @@
 # prompt-polisher
 
+**版本**：v1.0.0（beta）
+
 一个需求提示词打磨器：把**模糊、不专业、考虑不周全**的需求描述，打磨为**清晰、专业、完整、可验证**的 AI 提示词（prompt）。提高人与 AI 的沟通效率，降低反复修改需求的成本。
 
 ## 解决的问题
@@ -37,11 +39,11 @@
 ## 安装
 
 ```bash
-# 全局安装（所有项目可用）
-cp -r skills/prompt-polisher ~/.claude/skills/
+# 在本目录下执行；全局安装（所有项目可用）
+cp -r . ~/.claude/skills/prompt-polisher/
 
 # 或项目级安装
-cp -r skills/prompt-polisher <目标项目>/.claude/skills/
+cp -r . <目标项目>/.claude/skills/prompt-polisher/
 ```
 
 新开会话后（技能需重启后加载）：
@@ -52,7 +54,7 @@ cp -r skills/prompt-polisher <目标项目>/.claude/skills/
 ## 文件结构
 
 ```
-skills/prompt-polisher/
+prompt-polisher/                          # 本目录（可分发 / 安装的 skill）
 ├── SKILL.md                              # 主指令：工作流程 + 检查清单 + 输出模板
 └── references/
     ├── prompt-engineering-principles.md  # 提示词工程规范（15 条原则 + 模糊词替换对照表）
@@ -63,3 +65,7 @@ skills/prompt-polisher/
 
 - [Anthropic Prompt Engineering 文档](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/overview)
 - [OpenAI Prompt Engineering Guide](https://platform.openai.com/docs/guides/prompt-engineering)
+
+## License
+
+MIT，见仓库根目录 [LICENCE](../LICENCE)。

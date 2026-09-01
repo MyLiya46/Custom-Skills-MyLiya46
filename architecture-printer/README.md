@@ -1,5 +1,7 @@
 # architecture-printer
 
+**版本**：v1.0.0（beta）
+
 `architecture-printer` 是一个面向 Codex、Claude Code 及其他支持 `SKILL.md` 的代码代理的通用项目架构文档 Skill。
 
 它帮助刚接触新项目的开发者快速回答：
@@ -65,4 +67,4 @@ architecture-printer/
 
 ## License
 
-本项目使用 [MIT License](LICENCE)。
+本项目使用 [MIT License](../LICENCE)。
