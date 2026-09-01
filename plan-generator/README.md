@@ -1,61 +1,43 @@
 # plan-generator
 
-**版本**：v1.0.0（beta）
+版本：v1.1.0（beta）
 
-把 PRD / 方案报告 / 技术方案拆解为「逐任务计划文件（plans）+ 拓扑有序任务清单（todo）」，并逐条与用户一对一审阅每份新增计划直到步骤精确到参数、验收可运行。
-
-核心指令见 [SKILL.md](SKILL.md)；计划文件与任务清单模板见 [references/](references/)。
+把 PRD、方案报告或技术方案拆解为逐任务计划文件（plans）和拓扑有序任务清单（todo），并按 DAG 批次评审新增计划。
 
 ## 目录结构
 
-```text
-plan-generator/               # 本目录（可分发 / 安装的 skill）
-├── SKILL.md                # skill 核心指令（拆解 + 逐条评审工作流）
-├── README.md               # 本文件
-└── references/
-    ├── plan-template.md    # 计划文件命名规范 + 字段结构 + 写作红线
-    └── todo-template.md    # 任务清单三段结构 + 表格字段
-```
-
-## 安装
-
-本目录同时支持 Claude Code / Codex（同一份 `SKILL.md`），复制到对应客户端的 skills 目录即可：
-
-**Claude Code**
-
-```bash
-# Linux / macOS / Windows Git Bash
-mkdir -p ~/.claude/skills/plan-generator && cp -r . ~/.claude/skills/plan-generator/
-```
-
-**Codex**
-
-```bash
-# Linux / macOS / Windows Git Bash
-mkdir -p ~/.codex/skills/plan-generator && cp -r . ~/.codex/skills/plan-generator/
-```
-
-```powershell
-# Windows PowerShell
-New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\skills\plan-generator" | Out-Null
-Copy-Item -Recurse -Force * "$env:USERPROFILE\.claude\skills\plan-generator\"
-New-Item -ItemType Directory -Force "$env:USERPROFILE\.codex\skills\plan-generator" | Out-Null
-Copy-Item -Recurse -Force * "$env:USERPROFILE\.codex\skills\plan-generator\"
-```
+    plan-generator/
+    ├── SKILL.md
+    ├── README.md
+    └── references/
+        ├── plan-template.md
+        └── todo-template.md
 
 ## 使用
 
-对 Claude Code/Codex 说「用 plan-generator 拆解 docs/PRD.md」，或直接 @ 该方案文档并说明诉求——skill 会先拆解为 plans + todos，再逐条与你评审每份新增计划。
+对 Claude Code 或 Codex 说“用 plan-generator 拆解 docs/PRD.md”，或直接引用方案文档并说明诉求。
 
-支持三种模式：**首次**（目录无 plans/todo，从零建）、**续写**（已有 plans + todo，接着追加，ID 递增、保留既有任务）、**覆盖重拆**（新口径替换旧任务，先确认范围）。
+工作流：
 
-## 默认约定（可换项目覆盖）
+1. 生成或追加 plans 和 todo；
+2. 按 DAG 层识别可批量评审的任务；
+3. 对跨域、高风险或含未决假设的任务进行深审；
+4. 通过后只更新 docs/todo.md 的状态。
 
-- 计划目录：`docs/plans/` (or `docs/tasks/`)，命名 `T{n}-description-YYYY-MM-DD.md`
-- 清单文件：`docs/todo.md`（任务总览表 + 拓扑顺序注释 + 交付物核对）
+同一层且无共享文件或未决口径的任务可以批量评审；数据库迁移、认证、外部服务和跨域契约进入深审。
 
-见 [references/](references/)。
+## 默认约定
 
-## License
+- 计划目录：docs/plans/
+- 计划命名：T{n}-description-YYYY-MM-DD.md
+- 清单文件：docs/todo.md
+- 状态真值：docs/todo.md 的任务总览表
+- 全局关键口径和跨任务假设：保留在 docs/todo.md 的拓扑与关键口径部分
 
-MIT，见仓库根目录 [LICENCE](../LICENCE)。
+续写时先读取 todo 和计划文件名，只按影响范围加载历史 plan 正文，不全量扫描无关计划。
+
+状态读取、就绪查询和批量写回使用 scripts/plan_state.py；不要让模型手工扫描 todo 计算状态。
+
+## 与 plan-executor 的衔接
+
+plan-executor 读取 todo 的状态和依赖计算就绪集，只在任务进入执行池后读取对应 plan。旧计划中已有的状态字段保留兼容，但不作为新的调度真值。
