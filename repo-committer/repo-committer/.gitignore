@@ -1,0 +1,5 @@
+# repo-committer 私有运行时状态
+config.json
+
+# Python 缓存
+__pycache__/

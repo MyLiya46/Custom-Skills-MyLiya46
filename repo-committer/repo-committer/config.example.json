@@ -1,0 +1,67 @@
+{
+  "// 说明": [
+    "repo-committer 的运行时偏好模板（committer config）。真正生效的是同目录下的 config.json（私有、已 gitignore）。",
+    "本文件随 skill 分发，仅作字段结构参考；scripts/init_config.py（推荐，扫描本机 git 身份+现场 remote/branch）或 scripts/sync.py（仅骨架）可生成 config.json。",
+    "",
+    "区分两个概念（下文分别简称）：",
+    "  - git config：本机 / 本仓库的 git 原生配置（git config --global / --system / --local，git remote、.gitignore 等），由 git 管理。",
+    "  - committer config：本文件，repo-committer 自己的配置，记录从 git config 扫描来的身份与每个项目的落地设置。",
+    "",
+    "顶层字段（非 project 内）= 全局默认值，作为「扫描不到本机 git 配置时」的回退：",
+    "  - current_user：提交身份（每次 git -c 一次性注入，不写入仓库 .git/config）",
+    "  - alternate_user：备选身份列表，供切换账号时快速选用",
+    "  - remotes：全局默认的多远程推送清单（项目级 remotes 覆盖它）",
+    "  - behavior：全局行为偏好",
+    "  - commit_message_language：提交消息语言，\"zh\"（中文，默认）或 \"en\"（英文）",
+    "",
+    "project 字段：按「项目根目录绝对路径」为 key 记录每个项目的属地配置（思想类似 Claude 记录会话）。",
+    "  执行时以当前项目（pwd 向上找 .git 或目录本身）的 key 优先匹配，命中则用项目级配置；未命中则走全局 + 扫描。",
+    "  每个 project 值含：remote / branch / current_user / behavior 等（不含 gitignore，也不含任何 SSH key / 密钥——认证走 git 自身配置）。",
+    "",
+    "gitignore 隐私拦截：每次执行只针对「即将 git add 的新改动」，不看已提交内容；",
+    "  已忽略项用 git check-ignore 判断（正确处理嵌套 .gitignore），共识项自动补写、敏感项提示确认。",
+    "  不在 config.json 里单独维护 gitignore 字段（清单逻辑见 scripts/project.py）。",
+    "",
+    "本模板中 current_user.name/email 用空串、alternate_user/remotes 用 []、project 用 {} ——",
+    "  占位假值（Your Name / you@example.com / 假远程 / 演示 project 条目）绝不流入运行时 config.json；",
+    "  空值 = 「未知，扫描不到时按需问询并写回」，绝不填占位假值。",
+    "  字段结构与示例见下方 \"// 示例 …\" 注释键（会被 init_config.py / sync.py 的 startswith(\"//\") 过滤，不出现在 config.json）。"
+  ],
+  "current_user": {
+    "name": "",
+    "email": ""
+  },
+  "alternate_user": [],
+  "remotes": [],
+  "behavior": {
+    "ask_before_push": true,
+    "auto_include_untracked": false,
+    "auto_git_init": true
+  },
+  "commit_message_language": "zh",
+  "project": {},
+  "// 示例 remotes": [
+    {
+      "name": "github",
+      "url": "git@github.com:your-username/your-repo.git",
+      "branch": "",
+      "enabled": true
+    }
+  ],
+  "// 示例 project": {
+    "/absolute/path/to/your/other/repo": {
+      "current_user": {
+        "name": "Your Name",
+        "email": "you@example.com"
+      },
+      "remotes": [
+        {
+          "name": "origin",
+          "url": "git@github.com:your-username/other-repo.git",
+          "branch": "main",
+          "enabled": true
+        }
+      ]
+    }
+  }
+}
