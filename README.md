@@ -7,6 +7,7 @@
 | Skill | 版本 | 性质 | README |
 |---|---|---|---|
 | [`architecture-printer`](architecture-printer/) | beta | Python 脚本（扫描 + 渲染） | [architecture-printer](architecture-printer/README.md) |
+| [`learning-tutor`](learning-tutor/) | beta | 纯提示词（SKILL.md + 领域手册） | [learning-tutor](learning-tutor/README.md) |
 | [`plan-generator`](plan-generator/) | beta | 纯提示词（SKILL.md + 模板） | [plan-generator](plan-generator/README.md) |
 | [`plan-executor`](plan-executor/) | beta | 纯提示词（SKILL.md + 模板，plan-generator 下游） | [plan-executor](plan-executor/README.md) |
 | [`prompt-polisher`](prompt-polisher/) | beta | 纯提示词（SKILL.md + 模板） | [prompt-polisher](prompt-polisher/README.md) |
