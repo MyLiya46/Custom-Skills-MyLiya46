@@ -13,19 +13,19 @@ description: 把 PRD / 方案报告 / 技术方案拆解为一任务一计划文
 2. Todo：按拓扑顺序排列的任务清单；
 3. 评审：对新增计划进行可追踪的批次评审，消灭未决参数、冲突和模糊验收。
 
-核心质量线仍是可执行粒度：每条实施步骤落到“对象 + 动作 + 参数值”，并附可运行验收命令。
+核心质量线是可执行粒度：每条实施步骤落到“对象 + 动作 + 参数值”，并附可运行验收命令。
 
 ## 目标（优先级 1 > 2 > 3）
 
 1. 全量拆解源方案，生成 Plans + Todo，依赖关系形成无环 DAG；
 2. 按 DAG 层和风险分组评审，减少重复输出和用户确认轮次；
-3. 评审通过后只更新 docs/todo.md 的状态，不在 plan 文件和 todo 之间维护两套生命周期真值。
+3. 评审通过后只更新 docs/todo.json 的状态，该文件作为唯一生命周期真值；docs/todo.md 由脚本自动导出
 
 ## 产物职责与状态真值
 
-- docs/todo.md：任务 ID、标题、blockedBy、计划路径、生命周期状态的唯一真值。
-- docs/plans/T*.md：实施详情、参数、涉及对象和可运行验收项；新计划不要求写生命周期状态。
-- docs/todo.md：同时保留拓扑、关键口径和跨任务假设；不要把这些内容拆到额外的决策文件。
+- docs/todo.json：任务 ID、标题、blockedBy、计划路径、生命周期状态的唯一可写真值；同时保存拓扑、关键口径和跨任务假设；不要把这些内容拆到额外的状态文件。
+- docs/todo.md：由 docs/todo.json 自动导出的可读视图，禁止手工维护。
+- docs/plans/T*.md：实施详情、参数、涉及对象和可运行验收项
 
 状态枚举：
 
@@ -39,19 +39,17 @@ description: 把 PRD / 方案报告 / 技术方案拆解为一任务一计划文
 
 正常流转：pending → reviewed → in_progress → completed；blocked 为旁路状态，解除后回到 reviewed。
 
-旧 plan 中存在“状态”字段时保留原文，不主动重写；新 planner 和 executor 均以 todo 状态列为准，并在发现不一致时报告诊断。
-
 ## 使用模式
 
 | 模式 | 触发条件 | 行为 |
 |---|---|---|
-| 首次 | 无 docs/plans/ 或无 docs/todo.md | 从 T01 起生成 |
+| 首次 | 无 docs/plans/ 或无 docs/todo.json | 从 T01 起生成 |
 | 续写（默认） | 已有 plans + todo | 追加新任务，不改历史任务 |
 | 覆盖重拆 | 新方案替换既有任务口径 | 先确认范围，再执行 |
 
 ### 续写与上下文加载
 
-1. 先调用状态脚本校验并查询 docs/todo.md，再列出 docs/plans/T*.md 文件名；从脚本结果和文件名确认最大 ID、路径约定和状态。
+1. 先调用状态脚本校验并查询 docs/todo.json，再列出 docs/plans/T*.md 文件名；从脚本结果和文件名确认最大 ID、路径约定和状态。
 2. 默认不读取所有历史 plan 正文。
 3. 只读取以下计划正文：本次候选任务、其直接依赖、直接后继、存在共享文件或决策冲突的任务，以及用户明确指定的任务。
 4. 若无法判断影响范围，先读旧计划的标题、任务 ID、依赖和目标摘要；仍有冲突时再读取正文并说明原因。
@@ -60,20 +58,22 @@ description: 把 PRD / 方案报告 / 技术方案拆解为一任务一计划文
 ## 输入
 
 - 主输入：源方案文档，通常是 docs/PRD.md 或用户明确指定的方案文件。
-- 续写输入：docs/todo.md、docs/plans/。
+- 续写输入：docs/todo.json、docs/plans/；todo.md 仅作为导出视图或迁移输入。
 - 模板：references/plan-template.md、references/todo-template.md。
 
 ## 状态脚本
 
 状态、依赖和就绪集必须优先通过脚本查询，不要手工通读 todo 表来计算：
 
-    python <skill_root>/scripts/plan_state.py validate --todo docs/todo.md
-    python <skill_root>/scripts/plan_state.py query --todo docs/todo.md --format json
-    python <skill_root>/scripts/plan_state.py ready --todo docs/todo.md --format json
+    python <skill_root>/scripts/plan_state.py validate --state docs/todo.json
+    python <skill_root>/scripts/plan_state.py query --state docs/todo.json --format json
+    python <skill_root>/scripts/plan_state.py ready --state docs/todo.json --format json
+
+`validate` 默认同时 lint JSON 引用的全部计划正文；`lint-plan --plan <path>` 可单独诊断一份计划。首次迁移使用 `import-md --todo docs/todo.md --state docs/todo.json`，展示视图使用 `export-md --state docs/todo.json --todo docs/todo.md`。`--todo` 只保留 legacy 兼容读取，不是长期写入入口。
 
 批量评审通过后，一次性写回状态：
 
-    python <skill_root>/scripts/plan_state.py set-status --todo docs/todo.md --task T01 T02 --status reviewed --from-status pending
+    python <skill_root>/scripts/plan_state.py review --state docs/todo.json --task T01 T02 --if-revision 12
 
 脚本输出 JSON 时，主流程只读取结果，不重复解析整份 todo。skill_root 是当前 Skill 的安装目录；在本仓库中可使用 plan-generator/scripts/plan_state.py。
 
@@ -85,8 +85,9 @@ description: 把 PRD / 方案报告 / 技术方案拆解为一任务一计划文
 1. 通读源方案，提取 capability、入口、分派逻辑、改造线、硬约束和验收目标。
 2. 建立 blockedBy DAG，标出可并行层；禁止环依赖和隐式依赖。
 3. 划定任务边界：按独立事实来源、独立验收闭环和独立回滚边界切分；不要仅为减少单个 plan 长度而机械拆分。
-4. 一次生成或追加 plan 文件和 todo。计划正文中落定已知参数；未决参数不得伪装成已决事实。
+4. 一次生成或追加 plan 文件和 todo.json；需要人类查看时再调用 export-md。计划正文中落定已知参数；未决参数不得伪装成已决事实。
 5. 自检任务 ID、文件名、依赖、验收命令、源方案覆盖率和禁止词；todo 保留拓扑、关键口径和跨任务假设，plan 之间不重复复制同一段说明。
+6. 只有正文通过固定章节、结构化步骤、风险回滚、验收命令和禁止词 lint 后，才允许进入评审通过门槛。
 
 ### 阶段二 · 批次评审
 
@@ -96,7 +97,7 @@ description: 把 PRD / 方案报告 / 技术方案拆解为一任务一计划文
    - 批量评审只展示任务摘要、依赖、疑点、验收命令摘要和计划路径；用户要求时再展开单个 plan 正文。
 7. 一次只向用户请求一个批次的确认。用户可以确认全部、确认部分 ID，或指出某个 ID 进入深审。
 8. 修改时只写入变更后的 plan，并展示 diff/变更摘要；不要每轮重复输出未变化的完整计划。
-9. 批次通过后，在一次写操作中把对应 todo 行从 pending 更新为 reviewed。不要为每个 plan 单独重写 todo，也不要给新 plan 写第二套状态。
+9. 批次通过后，在一次 `review` 写操作中把对应 JSON 任务从 pending 更新为 reviewed，并携带 revision 防止并发覆盖；不要手工重写 todo.md，也不要给 plan 写第二套状态。
 10. 同一批次最多进行 3 轮集中澄清；仍未收敛时拆成单任务深审并列出阻塞点，不擅自定案。
 
 ## 质量判定线
@@ -112,14 +113,15 @@ description: 把 PRD / 方案报告 / 技术方案拆解为一任务一计划文
 - 只产出或修改计划和 todo 文档，不修改源码。
 - 源方案标记为【假设】的内容保留标记，不擅自升级为事实。
 - 依赖未写明时，采用最小无环依赖并标记假设；影响任务边界的冲突必须先询问。
-- 跨任务复用的硬约束统一写在 todo 的拓扑与关键口径部分；不在每份 plan 中重复全文。
+- 跨任务复用的硬约束统一写在 todo.json 的拓扑与关键口径字段中；todo.md 只展示，不在每份 plan 中重复全文。
 - 覆盖重拆、旧任务改动和历史 ID 重排都必须先确认。
 
 ## 验收标准
 
 - [ ] 源方案能力、入口和改造线均有任务覆盖，DAG 无环。
 - [ ] 每个任务都有唯一 ID、计划路径、blockedBy 和至少一条可运行验收命令。
-- [ ] docs/todo.md 是状态、依赖和计划路径的唯一真值；plan 状态字段只作为旧格式兼容信息。
+- [ ] 每个计划正文通过 `scripts/plan_state.py lint-plan`，必备章节顺序为问题 → 决策 → 范围 → 风险与回滚 → 实施步骤 → 完成标准。
+- [ ] docs/todo.json 是状态、依赖和计划路径的唯一可写真值；todo.md 由脚本生成；plan 状态字段只作为旧格式兼容信息。
 - [ ] 续写默认不读取无关历史 plan 正文。
 - [ ] 独立任务按批次评审，跨域或有未决假设的任务按深审处理。
 - [ ] 评审通过后只批量更新 todo 状态，不重复写入每个 plan 的状态字段。
