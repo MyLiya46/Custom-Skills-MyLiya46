@@ -6,12 +6,12 @@
 
 | Skill | 版本 | 性质 | README |
 |---|---|---|---|
-| [`architecture-printer`](architecture-printer/) | beta | Python 脚本（扫描 + 渲染） | [architecture-printer](architecture-printer/README.md) |
-| [`learning-tutor`](learning-tutor/) | beta | 纯提示词（SKILL.md + 领域手册） | [learning-tutor](learning-tutor/README.md) |
-| [`plan-generator`](plan-generator/) | beta | 提示词 + 状态脚本（SKILL.md + 模板） | [plan-generator](plan-generator/README.md) |
-| [`plan-executor`](plan-executor/) | beta | 提示词 + 状态脚本（plan-generator 下游） | [plan-executor](plan-executor/README.md) |
-| [`prompt-polisher`](prompt-polisher/) | beta | 纯提示词（SKILL.md + 模板） | [prompt-polisher](prompt-polisher/README.md) |
-| [`repo-committer`](repo-committer/) | beta | Python 脚本（配置 + gitignore 扫描） | [repo-committer](repo-committer/README.md) |
+| `architecture-printer` | beta | Python 脚本（扫描 + 渲染） | [architecture-printer](architecture-printer/README.md) |
+| `learning-tutor` | beta | 提示词（领域手册） | [learning-tutor](learning-tutor/README.md) |
+| `plan-generator` | beta | 提示词 + 状态脚本（模板） | [plan-generator](plan-generator/README.md) |
+| `plan-executor` | beta | 提示词 + 状态脚本（plan-generator 下游） | [plan-executor](plan-executor/README.md) |
+| `prompt-polisher` | beta | 提示词（模板） | [prompt-polisher](prompt-polisher/README.md) |
+| `repo-committer` | beta | Python 脚本（配置 + gitignore 扫描） | [repo-committer](repo-committer/README.md) |
 |  |  |  |  |
 
 ## 项目结构
@@ -27,7 +27,11 @@
 ```
 ## 安装
 
-推荐使用仓库自带的安装脚本。默认安装到当前项目，增加 `--global` 则安装到用户级目录；`--skill` 可以重复传入，也可以使用逗号分隔多个 skill，或者使用 `all` 安装全部 skill：
+#### 自动安装
+
+推荐使用仓库自带的安装脚本。默认安装到当前项目，
+
+> todo: 在使用带有 `script/` 的skill时，使用 `install.sh` 安装时将各 `<skill_root>` 自动解析为各自安装路径）。现有方式时脚本运行时自动解析当前路径 `SKILL_ROOT = Path(__file__).resolve().parent.parent`
 
 ```bash
 # 安装全部 skill 到当前项目的 .claude/skills/
@@ -40,7 +44,7 @@ bash install.sh --agent codex --global --skill plan-generator,plan-executor
 bash install.sh --agent codex --global --update --skill plan-generator,plan-executor
 ```
 
-也可以手动复制单个 skill。每个 skill 目录可同时安装到 Claude Code / Codex 的 skills 目录（两者都用 `SKILL.md` 驱动，同一份目录即可；脚本用到的 `<skill_root>` 会自动解析为各自安装路径）。以 `repo-committer` 为例：
+手动安装：每个 skill 目录可复制到 Claude Code / Codex 的 skills 目录，以 `repo-committer` 为例：
 
 
 **Claude Code**
