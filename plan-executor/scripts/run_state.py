@@ -23,7 +23,9 @@ from typing import Any
 SCHEMA_VERSION = 1
 MODES = ("worker", "direct")
 PROFILES = ("short", "normal", "long-infra", "external", "e2e", "unknown")
-TERMINAL_STATUSES = {"completed", "blocked", "failed"}
+TERMINAL_STATUSES = {"completed", "completed_offline", "blocked", "blocked_external", "failed"}
+SUCCESS_STATUSES = {"completed", "completed_offline"}
+BLOCKED_STATUSES = {"blocked", "blocked_external", "failed"}
 CHECKPOINT_STATUSES = {
     "acknowledged",
     "running",
@@ -76,7 +78,9 @@ REQUIRED_STATE_KEYS = (
 )
 TERMINAL_EVENTS = {
     "completed": "run_completed",
+    "completed_offline": "run_completed",
     "blocked": "run_blocked",
+    "blocked_external": "run_blocked",
     "failed": "run_failed",
 }
 
@@ -172,6 +176,11 @@ def validate_run_state(state: dict[str, Any], path: Path | None = None) -> list[
         errors.append(f"{prefix}invalid status: {status!r}")
     if not isinstance(state.get("attempt"), int) or state.get("attempt", 0) < 1:
         errors.append(f"{prefix}attempt must be a positive integer")
+    interval = state.get("checkpoint_interval_seconds")
+    if interval is not None and (
+        not isinstance(interval, (int, float)) or isinstance(interval, bool) or interval <= 0
+    ):
+        errors.append(f"{prefix}checkpoint_interval_seconds must be a positive number")
 
     timestamps: dict[str, datetime] = {}
     for field in ("started_at", "updated_at", "last_progress_at", "finished_at"):
@@ -247,11 +256,13 @@ def validate_run_state(state: dict[str, Any], path: Path | None = None) -> list[
                     )
             if resume_from not in known_boundaries:
                 errors.append(f"{prefix}resume_from is outside known checkpoint boundaries: {resume_from}")
-    if status == "completed" and resume_from:
-        errors.append(f"{prefix}completed run cannot have resume_from")
-    if status in {"blocked", "failed"} and not state.get("blocked_reason"):
+    if status in SUCCESS_STATUSES and resume_from:
+        errors.append(f"{prefix}successful run cannot have resume_from")
+    if status in BLOCKED_STATUSES and not isinstance(state.get("blocked_reason"), str):
         errors.append(f"{prefix}{status} run requires blocked_reason")
-    if status in {"blocked", "failed"} and not resume_from:
+    if status in BLOCKED_STATUSES and not str(state.get("blocked_reason") or "").strip():
+        errors.append(f"{prefix}{status} run requires a non-empty blocked_reason")
+    if status in BLOCKED_STATUSES and not resume_from:
         errors.append(f"{prefix}{status} run requires resume_from")
     if status in TERMINAL_STATUSES:
         if "finished_at" not in state:
@@ -260,8 +271,10 @@ def validate_run_state(state: dict[str, Any], path: Path | None = None) -> list[
             errors.append(f"{prefix}terminal run must have phase=terminal")
         if not checkpoints or checkpoints[-1].get("event") != TERMINAL_EVENTS[status]:
             errors.append(f"{prefix}terminal run must end with {TERMINAL_EVENTS[status]}")
-        if status == "completed" and state.get("acceptance") is None:
-            errors.append(f"{prefix}completed run requires acceptance")
+        if checkpoints and checkpoints[-1].get("status") != status:
+            errors.append(f"{prefix}terminal checkpoint status must match run status")
+        if status in SUCCESS_STATUSES and state.get("acceptance") is None:
+            errors.append(f"{prefix}{status} run requires acceptance")
     else:
         if "finished_at" in state:
             errors.append(f"{prefix}non-terminal run cannot have finished_at")
@@ -424,6 +437,44 @@ def scan_states(root: Path) -> tuple[list[dict[str, Any]], list[str], dict[str, 
     return entries, sorted(set(errors)), active_by_task
 
 
+def plan_run_warnings(entries: list[dict[str, Any]], plan_path: Path) -> list[str]:
+    """Report lifecycle/run-state drift without turning historical evidence invalid."""
+    try:
+        with plan_path.open("r", encoding="utf-8") as stream:
+            plan = json.load(stream)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        return [f"cannot read plan state for consistency check: {plan_path}: {error}"]
+    raw_tasks = plan.get("tasks") if isinstance(plan, dict) else None
+    if not isinstance(raw_tasks, list):
+        return [f"plan state for consistency check has no tasks list: {plan_path}"]
+    by_task: dict[str, list[dict[str, Any]]] = {}
+    for entry in entries:
+        task_id = entry.get("task_id")
+        if isinstance(task_id, str):
+            by_task.setdefault(task_id, []).append(entry)
+    warnings: list[str] = []
+    for item in raw_tasks:
+        if not isinstance(item, dict) or not isinstance(item.get("id"), str):
+            continue
+        task_id = item["id"]
+        lifecycle = item.get("status")
+        runs = by_task.get(task_id, [])
+        active = [run for run in runs if run.get("status") not in TERMINAL_STATUSES]
+        successful = [run for run in runs if run.get("status") in SUCCESS_STATUSES]
+        blocked = [run for run in runs if run.get("status") in BLOCKED_STATUSES]
+        if lifecycle == "completed" and (active or (runs and not successful)):
+            warnings.append(f"{task_id}: plan status completed but run state has no successful terminal result")
+        elif lifecycle == "blocked" and (active or successful):
+            warnings.append(f"{task_id}: plan status blocked conflicts with active/successful run state")
+        elif lifecycle == "in_progress" and not active:
+            warnings.append(f"{task_id}: plan status in_progress has no active run state")
+        elif lifecycle in {"reviewed", "pending"} and active:
+            warnings.append(f"{task_id}: plan status {lifecycle} conflicts with active run state")
+        if lifecycle == "completed" and blocked:
+            warnings.append(f"{task_id}: plan status completed retains blocked/failed run evidence")
+    return sorted(set(warnings))
+
+
 def repair_state(state: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     """Repair only fields that can be derived without discarding run evidence."""
     repaired = dict(state)
@@ -442,6 +493,7 @@ def repair_state(state: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         "acceptance": None,
         "blocked_reason": None,
         "resume_from": None,
+        "checkpoint_interval_seconds": None,
     }
     for key, value in defaults.items():
         if key not in repaired:
@@ -450,21 +502,21 @@ def repair_state(state: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
 
     if repaired.get("status") in TERMINAL_STATUSES:
         status = repaired.get("status")
-        if status == "completed" and repaired.get("resume_from"):
+        if status in SUCCESS_STATUSES and repaired.get("resume_from"):
             repaired["resume_from"] = None
-            changes.append("cleared resume_from on completed run")
+            changes.append("cleared resume_from on successful run")
         if repaired.get("phase") != "terminal":
             repaired["phase"] = "terminal"
             changes.append("set phase=terminal")
         if not repaired.get("finished_at"):
             repaired["finished_at"] = repaired.get("updated_at") or repaired.get("started_at") or utc_now()
             changes.append("derived finished_at")
-        if status in {"blocked", "failed"} and not repaired.get("blocked_reason"):
+        if status in BLOCKED_STATUSES and not repaired.get("blocked_reason"):
             checkpoints = repaired.get("checkpoints") or []
             message = checkpoints[-1].get("message") if isinstance(checkpoints[-1], dict) else None
             repaired["blocked_reason"] = message or "repaired terminal run requires follow-up"
             changes.append("derived blocked_reason")
-        if status in {"blocked", "failed"} and not repaired.get("resume_from"):
+        if status in BLOCKED_STATUSES and not repaired.get("resume_from"):
             repaired["resume_from"] = "resume"
             changes.append("derived resume_from")
         checkpoints = repaired.get("checkpoints")
@@ -557,6 +609,7 @@ def command_init(args: argparse.Namespace) -> int:
         "blocked_reason": None,
         "resume_from": args.resume_from,
         "expected_duration": args.expected_duration,
+        "checkpoint_interval_seconds": args.checkpoint_interval,
         "external_waits": args.external_waits,
         "checkpoint_phases": args.checkpoint_phases,
     }
@@ -651,8 +704,12 @@ def command_resume(args: argparse.Namespace) -> int:
     path = resolve_state_file(args)
     state = read_state(path)
     previous_status = state.get("status")
-    if state.get("status") == "completed":
-        raise RunStateError("cannot resume a completed run")
+    if state.get("status") in SUCCESS_STATUSES:
+        raise RunStateError("cannot resume a successful run")
+    if previous_status in BLOCKED_STATUSES and not args.allow_terminal_resume:
+        raise RunStateError(
+            "resuming a terminal blocked/failed run requires --allow-terminal-resume"
+        )
     timestamp = utc_now()
     phase = args.phase or str(state.get("resume_from") or "resume")
     if not RESUME_RE.fullmatch(phase) or phase.lower() == "terminal":
@@ -680,7 +737,7 @@ def command_resume(args: argparse.Namespace) -> int:
             "resume_from": phase,
         }
     )
-    if previous_status in {"blocked", "failed"}:
+    if previous_status in BLOCKED_STATUSES:
         state.pop("finished_at", None)
         state["blocked_reason"] = None
     atomic_write_json(path, state)
@@ -694,14 +751,17 @@ def command_finish(args: argparse.Namespace) -> int:
     state = read_state(path)
     if state.get("status") in TERMINAL_STATUSES:
         raise RunStateError("run is already terminal")
-    if args.status in {"blocked", "failed"} and not args.reason:
+    if args.status in BLOCKED_STATUSES and not args.reason:
         raise RunStateError(f"--reason is required for status {args.status}")
-    if args.status in {"blocked", "failed"} and not args.resume_from:
+    if args.status in BLOCKED_STATUSES and not args.resume_from:
         raise RunStateError(f"--resume-from is required for status {args.status}")
 
     timestamp = utc_now()
     changed_files = merge_unique(state.get("changed_files"), args.changed_file)
-    acceptance = read_acceptance(args)
+    supplied_acceptance = read_acceptance(args)
+    acceptance = supplied_acceptance if supplied_acceptance is not None else state.get("acceptance")
+    if args.status in SUCCESS_STATUSES and acceptance is None:
+        raise RunStateError(f"status {args.status} requires acceptance; provide --acceptance-json, --acceptance-file, or --acceptance-note")
     append_checkpoint(
         state,
         status=args.status,
@@ -710,11 +770,7 @@ def command_finish(args: argparse.Namespace) -> int:
         changed_files=changed_files,
         message=args.message,
         next_checkpoint="",
-        event={
-            "completed": "run_completed",
-            "blocked": "run_blocked",
-            "failed": "run_failed",
-        }[args.status],
+        event=TERMINAL_EVENTS[args.status],
         at=timestamp,
     )
     state.update(
@@ -725,10 +781,12 @@ def command_finish(args: argparse.Namespace) -> int:
             "updated_at": timestamp,
             "last_progress_at": timestamp,
             "finished_at": timestamp,
-            "result_path": args.result_path,
+            "result_path": args.result_path if args.result_path is not None else state.get("result_path"),
             "acceptance": acceptance,
-            "blocked_reason": args.reason if args.status in {"blocked", "failed"} else None,
-            "resume_from": args.resume_from or state.get("resume_from"),
+            "blocked_reason": args.reason if args.status in BLOCKED_STATUSES else None,
+            "resume_from": (args.resume_from or state.get("resume_from"))
+            if args.status in BLOCKED_STATUSES
+            else None,
         }
     )
     atomic_write_json(path, state)
@@ -747,6 +805,54 @@ def pid_alive(pid: Any) -> bool | None:
     except OSError:
         return False
     return True
+
+
+def summarize_state(state: dict[str, Any], path: Path | None = None) -> dict[str, Any]:
+    """Return a compact, stable view suitable for coordinator polling."""
+    checkpoints = state.get("checkpoints")
+    last_checkpoint = checkpoints[-1] if isinstance(checkpoints, list) and checkpoints else {}
+    if not isinstance(last_checkpoint, dict):
+        last_checkpoint = {}
+    interval = state.get("checkpoint_interval_seconds")
+    try:
+        last_progress = parse_timestamp(state.get("last_progress_at"))
+    except RunStateError:
+        last_progress = None
+    age: float | None = None
+    if last_progress is not None:
+        age = max(0.0, (datetime.now(timezone.utc) - last_progress).total_seconds())
+    return {
+        "state_file": str(path.resolve()) if path else state.get("state_file"),
+        "task_id": state.get("task_id"),
+        "run_id": state.get("run_id"),
+        "attempt": state.get("attempt"),
+        "mode": state.get("mode"),
+        "profile": state.get("profile"),
+        "status": state.get("status"),
+        "phase": state.get("phase"),
+        "updated_at": state.get("updated_at"),
+        "last_progress_at": state.get("last_progress_at"),
+        "idle_seconds": age,
+        "checkpoint_interval_seconds": interval,
+        "checkpoint_due": bool(
+            state.get("status") not in TERMINAL_STATUSES
+            and isinstance(interval, (int, float))
+            and age is not None
+            and age >= interval
+        ),
+        "current_command": state.get("current_command") or "",
+        "changed_files_count": len(state.get("changed_files", []))
+        if isinstance(state.get("changed_files"), list)
+        else 0,
+        "checkpoint_count": len(state.get("checkpoints", []))
+        if isinstance(state.get("checkpoints"), list)
+        else 0,
+        "last_event": last_checkpoint.get("event"),
+        "last_message": last_checkpoint.get("message", ""),
+        "acceptance_recorded": state.get("acceptance") is not None,
+        "blocked_reason": state.get("blocked_reason"),
+        "resume_from": state.get("resume_from"),
+    }
 
 
 def command_inspect(args: argparse.Namespace) -> int:
@@ -768,8 +874,19 @@ def command_inspect(args: argparse.Namespace) -> int:
         ),
         "active_command_present": bool(state.get("current_command")),
         "pid_alive": pid_alive(state.get("pid")),
+        "checkpoint_due": bool(
+            state.get("status") not in TERMINAL_STATUSES
+            and isinstance(state.get("checkpoint_interval_seconds"), (int, float))
+            and idle_seconds is not None
+            and idle_seconds >= state["checkpoint_interval_seconds"]
+        ),
     }
-    print_json(state)
+    if args.summary:
+        result = summarize_state(state, path)
+        result["observation"] = state["observation"]
+        print_json(result)
+    else:
+        print_json(state)
     return 0
 
 
@@ -783,12 +900,20 @@ def command_list(args: argparse.Namespace) -> int:
             except RunStateError:
                 continue
             value["state_file"] = str(path.resolve())
-            entries.append(value)
+            entries.append(summarize_state(value, path) if args.summary else value)
     print_json(entries)
     return 0
 
 
+def command_summary(args: argparse.Namespace) -> int:
+    path = resolve_state_file(args)
+    state = read_state(path)
+    print_json(summarize_state(state, path))
+    return 0
+
+
 def command_validate(args: argparse.Namespace) -> int:
+    consistency_warnings: list[str] = []
     if args.state_file:
         path = Path(args.state_file).expanduser().resolve()
         try:
@@ -799,18 +924,28 @@ def command_validate(args: argparse.Namespace) -> int:
             return 1
         errors = validate_run_state(state, path)
         result = {"valid": not errors, "state_file": str(path), "errors": errors}
+        if args.summary:
+            result["summary"] = summarize_state(state, path)
+        if args.plan_state:
+            consistency_warnings = plan_run_warnings([state], args.plan_state.expanduser().resolve())
+            result["warnings"] = consistency_warnings
         print_json(result)
         return 0 if not errors else 1
 
     root = state_dir(args).resolve()
     entries, errors, active_by_task = scan_states(root)
+    if args.plan_state:
+        consistency_warnings = plan_run_warnings(entries, args.plan_state.expanduser().resolve())
     result = {
         "valid": not errors,
         "state_dir": str(root),
         "file_count": len(entries),
         "active_tasks": {task: [str(path.resolve()) for path in paths] for task, paths in active_by_task.items()},
         "errors": errors,
-        "states": entries,
+        "warnings": consistency_warnings,
+        "states": [summarize_state(item, Path(item["state_file"])) for item in entries]
+        if args.summary
+        else entries,
     }
     print_json(result)
     return 0 if not errors else 1
@@ -902,6 +1037,13 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--mode", choices=MODES, default="worker")
     init.add_argument("--profile", choices=PROFILES, default="unknown")
     init.add_argument("--expected-duration")
+    init.add_argument(
+        "--checkpoint-interval",
+        "--max-checkpoint-interval",
+        dest="checkpoint_interval",
+        type=float,
+        help="maximum seconds between progress checkpoints",
+    )
     init.add_argument("--external-wait", dest="external_waits", action="append", default=[])
     init.add_argument("--checkpoint-phase", dest="checkpoint_phases", action="append", default=[])
     init.add_argument("--resume-from")
@@ -938,7 +1080,16 @@ def build_parser() -> argparse.ArgumentParser:
     resume.add_argument("--reason")
     resume.add_argument("--phase")
     resume.add_argument("--next-checkpoint", default="")
+    resume.add_argument(
+        "--allow-terminal-resume",
+        action="store_true",
+        help="explicitly authorize recovery from blocked_external/blocked/failed",
+    )
     resume.set_defaults(function=command_resume)
+
+    summary = subparsers.add_parser("summary", help="show one compact coordinator summary")
+    add_locator_arguments(summary)
+    summary.set_defaults(function=command_summary)
 
     finish = subparsers.add_parser("finish", help="record a terminal result")
     add_locator_arguments(finish)
@@ -956,15 +1107,19 @@ def build_parser() -> argparse.ArgumentParser:
     inspect = subparsers.add_parser("inspect", help="observe a run without changing it")
     add_locator_arguments(inspect)
     inspect.add_argument("--idle-timeout", type=float)
+    inspect.add_argument("--summary", action="store_true", help="return only the compact summary")
     inspect.set_defaults(function=command_inspect)
 
     listing = subparsers.add_parser("list", help="list run states in a state directory")
     listing.add_argument("--state-dir", type=Path)
+    listing.add_argument("--summary", action="store_true", help="return compact summaries")
     listing.set_defaults(function=command_list)
 
     validate = subparsers.add_parser("validate", help="validate one run or all runs in a state directory")
     validate.add_argument("--state-dir", type=Path)
     validate.add_argument("--state-file", type=Path)
+    validate.add_argument("--plan-state", type=Path, help="warn when todo lifecycle and run states disagree")
+    validate.add_argument("--summary", action="store_true", help="omit full state payloads")
     validate.set_defaults(function=command_validate)
 
     repair = subparsers.add_parser("repair", help="repair derivable run-state fields atomically")

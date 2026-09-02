@@ -17,6 +17,7 @@ description: 读取 plan-generator 产出的 docs/todo.json 与 docs/plans/，�
 - plan 文件：执行详情、参数、涉及对象和验收命令；不要求包含生命周期状态。
 - 兼容旧格式：旧 plan 中存在“状态”字段时不删除、不写入、不作为调度依据；与 todo 不一致时以 todo 为准并报告。
 - 状态枚举：pending、reviewed、in_progress、completed、blocked。
+- 运行态结果另行区分 `completed_offline`、`blocked_external` 和 `failed`；它们不会直接替代 todo 的生命周期枚举。
 - 默认目录：docs/plans/、docs/todo.json、T{n} 编号，除非用户另行指定。
 
 ## 运行监督契约
@@ -25,6 +26,7 @@ description: 读取 plan-generator 产出的 docs/todo.json 与 docs/plans/，�
 - 任务优先读取计划中的“执行画像”；旧 plan 没有画像时，根据验收命令和外部依赖保守推断，涉及 PG、服务启动、HTTP 外部任务或 E2E 的任务不得使用短等待画像。
 - “没有最终回复”或“工作区没有新文件”都不是失活证据。活动命令、近期 checkpoint、外部等待声明或仍存活的进程都应继续等待。
 - 主代理每个阶段最多提醒一次；提醒后先进入 grace period，再检查运行记录、进程、日志和已有副作用，禁止无证据关闭后立即重复派发。
+- 每个阶段必须遵守 plan 声明的最大 checkpoint 间隔；协调器可用 `run_state.py summary` 判断是否到期，并生成一行进度摘要。
 - 重入必须复用原 `run_id` 和已有 checkpoint，从最后一个未通过的验收项继续；旧运行未确认终止前不得为同一任务创建第二个活动 run。
 - 运行记录默认写入项目外的临时状态目录，不修改 `docs/todo.json` 或 `docs/todo.md`；运行记录工具见 `scripts/run_state.py`，监督细则见 `references/runtime-supervision.md`。
 
@@ -45,8 +47,9 @@ description: 读取 plan-generator 产出的 docs/todo.json 与 docs/plans/，�
    - blocked：默认不执行，等待用户明确解除条件；
    - reviewed / in_progress：进入候选执行池。
 5. 只有任务进入当前就绪集、用户明确指定，或需要诊断其验收命令时，才读取对应 plan 正文。
-6. 从 plan 提取执行画像：`execution_class`、外部等待、预期阶段和恢复边界；缺失时按 `references/runtime-supervision.md` 的保守规则推断。
+6. 从 plan 提取执行画像：`执行画像`、启动/空闲/硬截止、最大 checkpoint 间隔、外部等待、预期阶段和恢复边界；缺失时按 `references/runtime-supervision.md` 的保守规则推断。
 7. 确定执行模式；未显式指定时使用 `worker`，并在创建 run state 时固定记录。
+8. 对每个候选任务执行 `scripts/preflight.py check --plan <plan> --format json --summary`；必需环境失败时记录 `blocked_external`，不启动 worker。
 
 ## 阶段二 · DAG 就绪集并行调度
 
@@ -80,7 +83,7 @@ description: 读取 plan-generator 产出的 docs/todo.json 与 docs/plans/，�
 
 1. 启动后先回传 `acknowledged`，再按阶段回传 checkpoint；长命令期间不要求每秒自然语言回复；
 2. 每个阶段开始前写 `phase_started`，按 plan 的实施要点修改对象，照用已确认的参数；
-3. 每个阶段完成后写 `phase_completed`；逐条执行 plan 的验收命令并记录退出码、断言和输出摘要；命令内部的 HTTP/服务轮询由子代理或其脚本完成，不升级为主代理轮询；
+3. 每个阶段完成后写 `phase_completed`；逐条执行 plan 的验收命令并记录退出码、断言和输出摘要；离线验收与外部环境验收分开记录，命令内部的 HTTP/服务轮询由子代理或其脚本完成，不升级为主代理轮询；
 4. 失败且能在本任务范围内修复时，留下 diff 记录后重跑；无法继续时写 `phase_blocked` 并保留 `resume_from`；
 5. 依赖缺失、方案冲突或参数不成立时停止并上报 blocked，不得扩大任务范围。
 
@@ -95,7 +98,7 @@ subagent 回传至少包含：task_id、run_id、mode、status、phase、phase_h
 
 ## 阶段四 · 单写者状态回写
 
-主会话统一调用 scripts/plan_state.py 写入 docs/todo.json，避免并行 subagent 同时修改共享文件：
+主会话统一调用 scripts/plan_state.py 写入 docs/todo.json，避免并行 subagent 同时修改共享文件；每次 JSON 状态写入会自动刷新相邻的 `docs/todo.md` 生成视图：
 
 | 触发 | todo 状态 |
 |---|---|
@@ -108,7 +111,7 @@ subagent 回传至少包含：task_id、run_id、mode、status、phase、phase_h
     python <skill_root>/scripts/plan_state.py claim --state docs/todo.json --task T01 T02 --if-revision 12
     python <skill_root>/scripts/plan_state.py complete --state docs/todo.json --task T01 T02 --acceptance-note "all acceptance commands passed"
 
-一次命令可更新同一批次的多个任务；脚本使用 revision、锁文件和原子替换写回 todo.json，需要展示时再调用 export-md。
+一次命令可更新同一批次的多个任务；脚本使用 revision、锁文件和原子替换写回 todo.json，并同步导出 todo.md。
 
 不修改旧 plan 的“状态”字段。若旧 plan 状态与 todo 不一致，在报告中列出，但不因此阻止 todo 已明确的任务执行。
 
@@ -120,11 +123,14 @@ subagent 回传至少包含：task_id、run_id、mode、status、phase、phase_h
 - in_progress 重入：重新读取该任务 plan 和验收结果，验证已有副作用后续跑，不重做已确认完成的独立任务。
 - 子代理没有最终回复但有活动命令或最近 checkpoint：继续等待，不得按超时失败处理。
 - 运行记录缺失、run_id 冲突或旧进程是否终止无法确认：进入协调状态，暂停同一任务的重复派发。
+- 普通 checkpoint、idle reminder 或自然语言询问不得调用 `resume` 改写终态；只有明确的恢复动作才可从 `blocked` / `blocked_external` / `failed` 恢复。
+- 使用 `run_state.py validate --plan-state docs/todo.json` 检查 todo/run 不一致；这类结果输出为 warning，不能静默覆盖任何一方。
 
 ## 验收标准
 
 - [ ] 启动阶段通过脚本读取 todo 状态和就绪集，不全量读取所有 plan 正文。
 - [ ] 启动阶段通过 `run_state.py validate` 检查损坏 JSON、重复活动 run、恢复边界和终态一致性。
+- [ ] 启动阶段通过 `preflight.py` 检查 Shell、工具、Docker/容器、端口、URL、Python 模块和容器内关键依赖。
 - [ ] 就绪集严格依据 todo.json 的状态和 blockedBy 计算。
 - [ ] 可并行任务同时派发，完成后立即解锁后继。
 - [ ] 每个 subagent 只读取本任务 plan 和白名单文件。
@@ -133,6 +139,7 @@ subagent 回传至少包含：task_id、run_id、mode、status、phase、phase_h
 - [ ] 主会话单写者回写 todo，成功为 completed，失败为 blocked。
 - [ ] 中断重入不会重做 completed 任务。
 - [ ] 最终报告包含通过、阻塞、跳过、未解锁任务和验收命令结果。
+- [ ] 最终报告分别列出离线验收与外部环境验收，并可将实现完成但环境缺失记为 `blocked_external`。
 
 ## 输出
 

@@ -39,6 +39,8 @@
 - 旧 plan 没有执行画像时，遇到 PG、服务启动、外部 HTTP 任务或 E2E 采用保守的长任务画像。
 - 默认以 `worker` 模式派发；若使用 `direct`，必须有用户明确授权并在恢复时保持不变。
 - 阶段开始、完成和阻塞要即时写入 run state，不能等整个任务完成后批量补写。
+- 派发前运行 plan 声明的 `preflight.py check`；实现/离线验收与外部环境验收分别记录，外部不可用时用 `blocked_external` 表达。
+- 每个阶段遵守最大 checkpoint 间隔，协调器用 `run_state.py summary` 产生简短进度摘要；普通 reminder 不得恢复终态。
 
 派发顺序固定为：创建 run state → `reviewed` 改为 `in_progress` → 派发 worker。`in_progress` 重入只协调和复用原 run，不重复创建 worker。
 
@@ -62,7 +64,7 @@ worker payload 至少包含：
 
 旧 plan 的“状态”字段不删除、不写入、不作为真值。
 
-批量状态写入示例：
+批量状态写入示例（写入 JSON 后自动同步 todo.md）：
 
     python <skill_root>/scripts/plan_state.py complete --state docs/todo.json --task T01 T02 --acceptance-note "all acceptance commands passed"
 

@@ -34,8 +34,11 @@ PLAN_FIELD_RE = re.compile(
 PLAN_ID_RE = re.compile(r"任务\s*ID\s*[：:]\s*(T\d+)")
 PLAN_BLOCKED_BY_RE = re.compile(r"blockedBy\s*[：:]\s*(.*)", re.IGNORECASE)
 FORBIDDEN_PLAN_RE = re.compile(r"\b(?:TBD|TODO)\b", re.IGNORECASE)
-REQUIRED_PLAN_SECTIONS = ("问题", "决策", "范围", "风险与回滚", "实施步骤", "完成标准")
-PLAN_STEP_FIELDS = ("对象", "动作", "参数", "文件", "命令")
+REQUIRED_PLAN_SECTIONS = ("问题", "决策", "范围", "环境预检", "风险与回滚", "实施步骤", "完成标准")
+LEGACY_PLAN_SECTIONS = ("问题", "决策", "范围", "风险与回滚", "实施步骤", "完成标准")
+PLAN_STEP_FIELDS = ("对象", "动作", "参数", "核心修改文件", "必要集成文件", "命令")
+ACCEPTANCE_TYPES = {"offline", "external", "mixed"}
+EXECUTION_PROFILES = {"short", "normal", "long-infra", "external", "e2e"}
 JSON_SCHEMA_VERSION = 1
 DEFAULT_STATE_FILE = Path("docs/todo.json")
 DEFAULT_TODO_VIEW = Path("docs/todo.md")
@@ -161,20 +164,22 @@ def lint_plan(plan_file: Path, expected_task: str | None = None, expected_blocke
         if name in REQUIRED_PLAN_SECTIONS:
             positions.setdefault(name, []).append((line_number, body))
 
-    missing = [name for name in REQUIRED_PLAN_SECTIONS if name not in positions]
+    legacy_format = "环境预检" not in positions
+    required_sections = LEGACY_PLAN_SECTIONS if legacy_format else REQUIRED_PLAN_SECTIONS
+    missing = [name for name in required_sections if name not in positions]
     if missing:
         errors.append(f"{prefix}: missing required sections: {', '.join(missing)}")
-    duplicates = [name for name, values in positions.items() if len(values) > 1]
+    duplicates = [name for name, values in positions.items() if name in required_sections and len(values) > 1]
     if duplicates:
         errors.append(f"{prefix}: duplicate required sections: {', '.join(sorted(duplicates))}")
-    ordered = [name for name, _, _ in sections if name in REQUIRED_PLAN_SECTIONS]
-    expected_order = [name for name in REQUIRED_PLAN_SECTIONS if name in positions]
+    ordered = [name for name, _, _ in sections if name in required_sections]
+    expected_order = [name for name in required_sections if name in positions]
     if ordered != expected_order:
         errors.append(
-            f"{prefix}: required sections are out of order; expected {' -> '.join(REQUIRED_PLAN_SECTIONS)}"
+            f"{prefix}: required sections are out of order; expected {' -> '.join(required_sections)}"
         )
 
-    for name in REQUIRED_PLAN_SECTIONS:
+    for name in required_sections:
         values = positions.get(name, [])
         if values and not _has_real_content(values[0][1]):
             errors.append(f"{prefix}: section {name} is empty")
@@ -183,6 +188,34 @@ def lint_plan(plan_file: Path, expected_task: str | None = None, expected_blocke
     for field in ("风险", "回滚"):
         if _is_placeholder(_field_value(risk_body, field)):
             errors.append(f"{prefix}: 风险与回滚 must include a non-empty {field} field")
+
+    if not legacy_format:
+        environment_body = positions.get("环境预检", [(0, [])])[0][1]
+        for field in (
+            "必需 Shell",
+            "必需命令",
+            "必需端口",
+            "必需 URL",
+            "必需 Python 模块",
+            "必需 Docker 容器",
+            "容器内必需命令",
+            "容器内必需 Python 模块",
+            "执行画像",
+            "启动超时（秒）",
+            "空闲超时（秒）",
+            "硬截止（秒）",
+            "最大 checkpoint 间隔（秒）",
+            "预检命令",
+        ):
+            if _is_placeholder(_field_value(environment_body, field)):
+                errors.append(f"{prefix}: 环境预检 must include a non-empty {field} field")
+        profile = _field_value(environment_body, "执行画像")
+        if profile and profile not in EXECUTION_PROFILES:
+            errors.append(f"{prefix}: 环境预检 执行画像 must be one of {', '.join(sorted(EXECUTION_PROFILES))}")
+        for timeout_field in ("启动超时（秒）", "空闲超时（秒）", "硬截止（秒）", "最大 checkpoint 间隔（秒）"):
+            value = _field_value(environment_body, timeout_field)
+            if value and not re.fullmatch(r"\d+(?:\.\d+)?", value.strip()):
+                errors.append(f"{prefix}: 环境预检 {timeout_field} must be a positive number of seconds")
 
     step_values = positions.get("实施步骤", [])
     if step_values:
@@ -194,20 +227,34 @@ def lint_plan(plan_file: Path, expected_task: str | None = None, expected_blocke
             end = step_heads[position + 1] if position + 1 < len(step_heads) else len(step_lines)
             body = step_lines[start + 1 : end]
             title = PLAN_STEP_RE.match(step_lines[start]).group(1).strip()  # type: ignore[union-attr]
-            for field in PLAN_STEP_FIELDS:
+            step_fields = ("对象", "动作", "参数", "文件", "命令") if legacy_format else PLAN_STEP_FIELDS
+            for field in step_fields:
                 if _is_placeholder(_field_value(body, field)):
                     errors.append(f"{prefix}: step {title} must include a non-empty {field} field")
-            file_value = _field_value(body, "文件")
-            if file_value and (
-                file_value.strip() in {"无", "N/A", "n/a"}
-                or re.match(r"^(?:[A-Za-z]:[\\/]|[\\/])", file_value.strip())
-                or file_value.strip().startswith("..")
-            ):
-                errors.append(f"{prefix}: step {title} 文件 must be a relative path")
+            file_fields = ("文件",) if legacy_format else ("核心修改文件", "必要集成文件")
+            for file_field in file_fields:
+                file_value = _field_value(body, file_field)
+                if file_value and (
+                    file_field in {"文件", "核心修改文件"}
+                    and file_value.strip() in {"无", "N/A", "n/a"}
+                    or
+                    re.match(r"^(?:[A-Za-z]:[\\/]|[\\/])", file_value.strip())
+                    or file_value.strip().startswith("..")
+                ):
+                    errors.append(f"{prefix}: step {title} {file_field} must be a relative path")
 
     completion_body = positions.get("完成标准", [(0, [])])[0][1]
-    if _is_placeholder(_field_value(completion_body, "验收命令")):
-        errors.append(f"{prefix}: 完成标准 must include a runnable 验收命令")
+    acceptance_type = _field_value(completion_body, "验收类型")
+    if legacy_format:
+        if _is_placeholder(_field_value(completion_body, "验收命令")):
+            errors.append(f"{prefix}: 完成标准 must include a runnable 验收命令")
+    else:
+        if acceptance_type not in ACCEPTANCE_TYPES:
+            errors.append(f"{prefix}: 完成标准 验收类型 must be one of offline, external, mixed")
+        if _is_placeholder(_field_value(completion_body, "离线验收命令")):
+            errors.append(f"{prefix}: 完成标准 must include a runnable 离线验收命令")
+        if acceptance_type in {"external", "mixed"} and _is_placeholder(_field_value(completion_body, "外部环境验收命令")):
+            errors.append(f"{prefix}: external or mixed plans require 外部环境验收命令")
     if _is_placeholder(_field_value(completion_body, "通过条件")):
         errors.append(f"{prefix}: 完成标准 must include a non-empty 通过条件 field")
 
@@ -617,6 +664,13 @@ def write_json_state(path: Path, data: dict[str, object]) -> None:
     atomic_write(path, json.dumps(data, ensure_ascii=True, indent=2) + "\n")
 
 
+def sync_markdown_view(state_path: Path, data: dict[str, object], todo_path: Path | None) -> Path:
+    """Keep the generated view adjacent to the canonical state after a write."""
+    target = (todo_path or state_path.parent / DEFAULT_TODO_VIEW.name).expanduser().resolve()
+    atomic_write(target, render_markdown(data, state_path, target))
+    return target
+
+
 def backend_is_markdown(args: argparse.Namespace) -> bool:
     return args.todo is not None
 
@@ -632,6 +686,8 @@ def json_transition(
     from_status: str | None = None,
 ) -> int:
     path = state_path_from_args(args).resolve()
+    synced_todo: Path | None = None
+    sync_warning: str | None = None
     with state_lock(path):
         data, state = load_json_state(path)
         errors = validate_json_state(path, data)
@@ -652,14 +708,16 @@ def json_transition(
                 raise StateError("--reason is required for blocked status")
             if requested == "blocked" and not args.resume_from:
                 raise StateError("--resume-from is required for blocked status")
-            if requested == "completed" and args.acceptance is None:
-                raise StateError("completion requires --acceptance-json or --acceptance-note")
         raw_tasks = data["tasks"]
         assert isinstance(raw_tasks, list)
         selected = set(args.task or [task.task_id for task in tasks])
         for item in raw_tasks:
             if not isinstance(item, dict) or item.get("id") not in selected:
                 continue
+            if requested == "completed" and args.acceptance is None and item.get("acceptance") is None:
+                raise StateError(
+                    f"{item.get('id')}: completion requires acceptance; provide --acceptance-json or --acceptance-note"
+                )
             item["status"] = requested
             if requested == "blocked":
                 item["blockedReason"] = args.reason
@@ -673,6 +731,12 @@ def json_transition(
         data["updated_at"] = utc_now()
         if not args.dry_run:
             write_json_state(path, data)
+            try:
+                synced_todo = sync_markdown_view(path, data, args.todo)
+            except (OSError, StateError) as error:
+                # The canonical JSON has already been committed; surface view drift
+                # without pretending the lifecycle write failed.
+                sync_warning = f"todo.md sync failed: {error}"
     result = {
         "state": str(path),
         "updated": sorted(selected),
@@ -680,6 +744,12 @@ def json_transition(
         "revision": data["revision"],
         "dry_run": args.dry_run,
     }
+    if synced_todo is not None:
+        result["todo"] = str(synced_todo)
+        result["todo_synced"] = True
+    if sync_warning:
+        result["todo_synced"] = False
+        result["warning"] = sync_warning
     print(json.dumps(result, ensure_ascii=True, indent=2))
     return 0
 

@@ -27,6 +27,25 @@ VALID_PLAN = """# T01 · 示例计划
 - 包含：计划模板和静态校验。
 - 不包含：业务源码。
 
+## 环境预检
+- 必需 Shell：pwsh, git-bash
+- 必需命令：python
+- 必需端口：无
+- 必需 URL：无
+- 必需 Python 模块：无
+- 必需 Docker 容器：无
+- 容器内必需命令：无
+- 容器内必需 Python 模块：无
+- 执行画像：normal
+- 启动超时（秒）：120
+- 空闲超时（秒）：600
+- 硬截止（秒）：1800
+- 最大 checkpoint 间隔（秒）：300
+- 预检命令：
+  ```bash
+  python preflight.py check --format json
+  ```
+
 ## 风险与回滚
 - 风险：旧计划不符合新结构，评审会被阻断。
 - 回滚：使用 --skip-plan-check 读取旧状态，并逐份补齐正文。
@@ -36,17 +55,20 @@ VALID_PLAN = """# T01 · 示例计划
 - 对象：plan_state.py
 - 动作：增加正文校验
 - 参数：固定章节、命令和字段
-- 文件：plan-generator/scripts/plan_state.py
+- 核心修改文件：plan-generator/scripts/plan_state.py
+- 必要集成文件：无
 - 命令：
   ```bash
   python plan-generator/scripts/plan_state.py lint-plan --plan docs/plans/T01-demo.md
   ```
 
 ## 完成标准
-- 验收命令：
+- 验收类型：offline
+- 离线验收命令：
   ```bash
   python -m unittest discover -s plan-generator/tests -v
   ```
+- 外部环境验收命令：无
 - 通过条件：退出码为 0，所有断言通过。
 """
 
@@ -97,6 +119,27 @@ class PlanStateLintTests(unittest.TestCase):
             self.assertTrue(any("forbidden TBD/TODO" in error for error in result["errors"]))
             self.assertTrue(any("missing required sections" in error for error in result["errors"]))
 
+    def test_legacy_plan_remains_readable_during_migration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            legacy = VALID_PLAN
+            start = legacy.index("## 环境预检")
+            end = legacy.index("## 风险与回滚")
+            legacy = legacy[:start] + legacy[end:]
+            legacy = legacy.replace("- 核心修改文件：plan-generator/scripts/plan_state.py", "- 文件：plan-generator/scripts/plan_state.py")
+            legacy = legacy.replace("- 必要集成文件：无\n", "")
+            completion_start = legacy.index("## 完成标准")
+            legacy = legacy[:completion_start] + """## 完成标准
+- 验收命令：
+  ```bash
+  python -m unittest discover -s plan-generator/tests -v
+  ```
+- 通过条件：退出码为 0，所有断言通过。
+"""
+            plan = self.write_fixture(root, legacy)
+            result = self.run_cli("lint-plan", "--plan", str(plan), "--task", "T01")
+            self.assertTrue(result["valid"], result)
+
     def test_blocked_by_mismatch_is_reported(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -121,6 +164,8 @@ class PlanStateLintTests(unittest.TestCase):
 
             reviewed = self.run_cli("review", "--state", str(state_file), "--task", "T01", "--if-revision", "0")
             self.assertEqual(reviewed["revision"], 1)
+            self.assertTrue(reviewed["todo_synced"])
+            self.assertIn("| reviewed |", (docs / "todo.md").read_text(encoding="utf-8"))
             claimed = self.run_cli("claim", "--state", str(state_file), "--task", "T01", "--if-revision", "1")
             self.assertEqual(claimed["revision"], 2)
             completed = self.run_cli(

@@ -66,10 +66,12 @@
 ```text
 created -> acknowledged -> running -> waiting_external -> validating
                                       \-> stale_candidate -> reconciling -> running
-validating -> completed | blocked | failed
+validating -> completed | completed_offline | blocked | blocked_external | failed
 ```
 
 这些状态不写入 `docs/todo.json`。`stale_candidate` 表示需要调查，不表示已经失败。
+
+终态分为 `completed`、`completed_offline`、`blocked`、`blocked_external`、`failed`。普通 checkpoint 不能改变任何终态；只有显式 `resume` 才能从阻塞/失败终态复用原 `run_id`。`finish` 未提供新验收证据时必须保留已有 `acceptance`。
 
 每个 run state 至少包含：
 
@@ -95,7 +97,7 @@ blocked_reason
 resume_from
 ```
 
-checkpoint 应在“开始实现、完成主要对象、进入验收、外部等待开始/结束、验收项通过”这些阶段边界产生，不要求每条命令或每秒产生一条消息。
+checkpoint 应在“开始实现、完成主要对象、进入验收、外部等待开始/结束、验收项通过”这些阶段边界产生，不要求每条命令或每秒产生一条消息。计划必须为每个阶段声明最大 checkpoint 间隔；run state 用 `checkpoint_interval_seconds` 保存该约束，`inspect` / `summary` 会返回 `checkpoint_due`。
 
 ## 4. 主代理监督流程
 
@@ -182,6 +184,7 @@ required events and final result schema
 - 重入沿用原 `run_id`，增加 `attempt`，从 `resume_from` 或最后一个未通过验收项继续。
 - 若依赖或参数确实不可行，主代理才通过 `plan_state.py` 将任务置为 `blocked`。
 - 运行态暂时不明时保持协调态，不把不确定性直接写成 `blocked`，也不立即重新派发。
+- 代码和离线验收已完成但服务、Docker、PG 或外部任务不可用时，使用 `completed_offline` 或 `blocked_external`，不要把离线实现标记为普通失败。
 
 ## 7. LCT 任务映射
 
@@ -254,6 +257,24 @@ python <skill_root>/scripts/run_state.py inspect \
 
 `inspect` 只返回 `idle_seconds`、活动命令、可选 PID 和 `idle_exceeded`，不会自动标记失败或关闭 run。
 
+简洁监督摘要：
+
+```text
+python <skill_root>/scripts/run_state.py summary --state-file <state-file>
+python <skill_root>/scripts/run_state.py list --state-dir <external-state-dir> --summary
+python <skill_root>/scripts/run_state.py validate --state-dir <external-state-dir> --summary --plan-state docs/todo.json
+```
+
+协调器可据此生成：`T08: implementation completed, acceptance running, last checkpoint 45s ago`。`validate` 的 todo/run 漂移只作为 warning 输出，不覆盖任一真值。
+
+执行前预检：
+
+```text
+python <skill_root>/scripts/preflight.py check --plan <plan-path> --format json --summary
+```
+
+预检只读检查 Shell、工具、端口、URL、Python 模块、Docker 容器及容器内模块，不启动或重启服务。
+
 阶段开始和完成可以使用明确的事件命令：
 
 ```text
@@ -278,7 +299,8 @@ python <skill_root>/scripts/run_state.py reconcile \
 
 python <skill_root>/scripts/run_state.py resume \
   --state-file <state-file> \
-  --phase acceptance
+  --phase acceptance \
+  --allow-terminal-resume
 ```
 
 最终回传：

@@ -299,6 +299,7 @@ class RunStateCliTests(unittest.TestCase):
                 state_file,
                 "--phase",
                 "migration",
+                "--allow-terminal-resume",
             )
             self.assertEqual(resumed["status"], "running")
             self.assertNotIn("finished_at", resumed)
@@ -316,6 +317,129 @@ class RunStateCliTests(unittest.TestCase):
             result = self.run_cli("repair", "--state-file", str(corrupt), check=False)
             self.assertFalse(result["valid"])
             self.assertEqual(corrupt.read_text(encoding="utf-8"), original)
+
+    def test_finish_preserves_acceptance_and_terminal_run_is_immutable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            created = self.init_run(root, "T16")
+            state_file = created["state_file"]
+            self.run_cli(
+                "checkpoint",
+                "--state-file",
+                state_file,
+                "--phase",
+                "offline-acceptance",
+                "--status",
+                "validating",
+            )
+            finished = self.run_cli(
+                "finish",
+                "--state-file",
+                state_file,
+                "--status",
+                "blocked",
+                "--reason",
+                "external backend unavailable",
+                "--resume-from",
+                "external-acceptance",
+                "--acceptance-json",
+                '{"type":"offline","command":"pytest","exit_code":0}',
+            )
+            self.assertEqual(finished["acceptance"]["exit_code"], 0)
+            preserved = self.run_cli(
+                "finish",
+                "--state-file",
+                state_file,
+                "--status",
+                "blocked",
+                "--reason",
+                "should be rejected",
+                "--resume-from",
+                "resume",
+                check=False,
+            )
+            self.assertEqual(preserved, {})
+            checkpoint = self.run_cli(
+                "checkpoint",
+                "--state-file",
+                state_file,
+                "--status",
+                "running",
+                "--phase",
+                "reminder",
+                check=False,
+            )
+            self.assertEqual(checkpoint, {})
+            unapproved_resume = self.run_cli(
+                "resume",
+                "--state-file",
+                state_file,
+                "--phase",
+                "external-acceptance",
+                check=False,
+            )
+            self.assertEqual(unapproved_resume, {})
+            resumed = self.run_cli(
+                "resume",
+                "--state-file",
+                state_file,
+                "--phase",
+                "external-acceptance",
+                "--allow-terminal-resume",
+            )
+            self.assertEqual(resumed["status"], "running")
+            self.assertEqual(resumed["acceptance"]["exit_code"], 0)
+
+    def test_completed_offline_and_summary_are_first_class(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            created = self.run_cli(
+                "init",
+                "--state-dir",
+                str(root),
+                "--task",
+                "T17",
+                "--checkpoint-interval",
+                "30",
+            )
+            state_file = created["state_file"]
+            finished = self.run_cli(
+                "finish",
+                "--state-file",
+                state_file,
+                "--status",
+                "completed_offline",
+                "--acceptance-note",
+                "offline tests passed",
+            )
+            self.assertEqual(finished["status"], "completed_offline")
+            summary = self.run_cli("summary", "--state-file", state_file)
+            self.assertEqual(summary["status"], "completed_offline")
+            self.assertTrue(summary["acceptance_recorded"])
+            listing = self.run_cli("list", "--state-dir", str(root), "--summary")
+            self.assertEqual(listing[0]["checkpoint_count"], 1)
+
+    def test_validate_reports_plan_run_drift_as_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            created = self.init_run(root, "T18")
+            plan_state = root / "todo.json"
+            plan_state.write_text(
+                json.dumps({"tasks": [{"id": "T18", "status": "completed"}]}),
+                encoding="utf-8",
+            )
+            result = self.run_cli(
+                "validate",
+                "--state-dir",
+                str(root),
+                "--plan-state",
+                str(plan_state),
+                "--summary",
+                check=False,
+            )
+            self.assertTrue(result["valid"])
+            self.assertTrue(result["warnings"])
+            self.assertIn("completed", result["warnings"][0])
 
 
 if __name__ == "__main__":

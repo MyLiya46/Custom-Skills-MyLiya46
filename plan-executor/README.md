@@ -13,6 +13,8 @@ plan-generator 的下游执行器：先读取 docs/todo.json，按状态和 bloc
     │   ├── parallel-scheduling.md
     │   └── runtime-supervision.md
     └── scripts/
+        ├── plan_state.py
+        ├── preflight.py
         └── run_state.py
 
 ## 使用
@@ -27,15 +29,15 @@ executor 会：
 2. 校验任务路径、状态和依赖；
 3. 只读取当前就绪或用户指定任务的完整 plan；
 4. 按 DAG 并发派发 subagent；
-5. 由主会话统一通过 CLI 回写 todo.json 状态，并按需生成 todo.md 和报告。
+5. 由主会话统一通过 CLI 回写 todo.json 状态，自动同步 todo.md，并生成报告。
 
 长任务还要为每个任务创建独立 run state，默认使用 `worker` 模式，按执行画像等待阶段事件和最终结果；run state 不修改 `docs/todo.json` 或 `docs/todo.md`。详见 `references/runtime-supervision.md` 和 `scripts/run_state.py`。
 
-运行前可用 `python scripts/run_state.py validate --state-dir <external-state-dir>` 检查所有运行记录；`repair` 只修复可推导字段，损坏 JSON 和重复活动 run 必须人工处理。
+运行前先用 `python scripts/preflight.py check --plan <plan-path> --format json --summary` 做只读环境预检，再用 `python scripts/run_state.py validate --state-dir <external-state-dir> --summary --plan-state docs/todo.json` 检查运行记录和状态漂移；`repair` 只修复可推导字段，损坏 JSON 和重复活动 run 必须人工处理。
 
 状态读取、校验、就绪查询和状态写回统一使用 scripts/plan_state.py；脚本输出 JSON，避免模型重复解析 todo.md。
 
-executor 的最小循环是：`ready --state docs/todo.json` → 创建 run state → `claim` → worker 验收 → `complete` 或 `block` → `export-md`。并发写入使用 revision 和状态锁，worker 不直接修改状态文件。
+executor 的最小循环是：`ready --state docs/todo.json` → 环境预检 → 创建 run state → `claim` → worker 离线/外部验收 → `complete` 或 `block` → 汇总。并发写入使用 revision 和状态锁，worker 不直接修改状态文件。
 
 ## 默认约定
 
@@ -44,6 +46,7 @@ executor 的最小循环是：`ready --state docs/todo.json` → 创建 run stat
 - 可读视图：docs/todo.md，由脚本生成
 - 计划命名：T{n}-description-YYYY-MM-DD.md
 - 状态枚举：pending、reviewed、in_progress、completed、blocked
+- 运行态结果：completed、completed_offline、blocked、blocked_external、failed
 - 状态真值：docs/todo.json
 - 状态脚本：scripts/plan_state.py
 
