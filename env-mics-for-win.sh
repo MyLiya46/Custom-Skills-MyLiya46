@@ -5,7 +5,7 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  ./install-misc.sh [install|update|append] --agent <claude-code|codex> [--global|--local]
+  ./install-misc.sh --agent <claude-code|codex> [--global|--local] [--install|--update|--append]
 
 Description:
   Install the agent-specific instruction file from misc/.
@@ -28,8 +28,8 @@ Operations:
 
 Examples:
   ./install-misc.sh --agent codex
-  ./install-misc.sh update --agent claude-code --global
-  ./install-misc.sh append --agent codex --local
+  ./install-misc.sh --update --agent claude-code --global
+  ./install-misc.sh --append --agent codex --local
 EOF
 }
 
