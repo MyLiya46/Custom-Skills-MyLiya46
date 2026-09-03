@@ -10,11 +10,6 @@
 - 运行脚本（Python、Node.js、shell 脚本等）
 - 使用 `grep`, `sed`, `awk` 等文本处理工具
 - 链式命令（`&&`, `||`, `;`）
-- 激活 Python 虚拟环境（包括 uv 管理的 `.venv`）：
-  ```bash
-  source backend/.venv/Scripts/activate
-  ```
-- 执行 `uv` 命令（`uv sync`, `uv run python ...` 等）
 
 ## 何时切换到 PowerShell 7
 仅当任务**明确且必须**涉及以下 Windows 系统级操作，且无法用 Git Bash 完成时，才生成 PowerShell 语法：
@@ -26,10 +21,6 @@
 此时输出 PowerShell 语法，并注意：
 - PowerShell 7 支持 `&&` 和 `||`，但建议保持脚本风格统一。
 - 避免混用 Bash 特有命令（如 `grep` 应替换为 `Select-String`）。
-- 激活虚拟环境使用：
-  ```powershell
-  backend\.venv\Scripts\Activate.ps1
-  ```
 
 ## 禁止混用
 - 在 Git Bash 中不要使用 PowerShell cmdlet（如 `Remove-Item`, `Get-ChildItem`）。
